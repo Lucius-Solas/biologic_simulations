@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Evolution &amp; Game Theory Simulation</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: #0d0d1a;
+            color: #dde;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 16px;
+            gap: 10px;
+            min-height: 100vh;
+        }
+
+        h1 { color: #99bbff; font-size: 1.3em; letter-spacing: 0.04em; }
+
+        #stats {
+            display: flex;
+            gap: 24px;
+            background: #1a1a2e;
+            padding: 8px 20px;
+            border-radius: 4px;
+            border: 1px solid #334;
+            font-size: 1em;
+        }
+        .stat-blue  { color: #5588ff; }
+        .stat-red   { color: #ff5555; }
+        .stat-green { color: #44cc66; }
+        .stat-white { color: #cccccc; }
+
+        canvas {
+            border: 2px solid #334;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        #legend {
+            display: flex;
+            gap: 20px;
+            font-size: 0.82em;
+            color: #888;
+        }
+        #legend span { display: flex; align-items: center; gap: 6px; }
+        .swatch {
+            width: 14px; height: 14px;
+            display: inline-block;
+            border: 1px solid #555;
+        }
+
+        #controls { display: flex; gap: 10px; }
+        button {
+            background: #222;
+            color: #ccd;
+            border: 1px solid #556;
+            padding: 6px 18px;
+            cursor: pointer;
+            font-family: inherit;
+            border-radius: 3px;
+        }
+        button:hover { background: #334; }
+
+        #outcome-table {
+            font-size: 0.78em;
+            border-collapse: collapse;
+            color: #aab;
+        }
+        #outcome-table th, #outcome-table td {
+            border: 1px solid #334;
+            padding: 3px 10px;
+            text-align: center;
+        }
+        #outcome-table th { background: #1a1a2e; color: #99bbff; }
+    </style>
+</head>
+<body>
+
+<h1>Evolution &amp; Game Theory Simulation</h1>
+
+<div id="stats">
+    <span class="stat-blue">&#9679; Blue: <b id="pop-blue">0</b></span>
+    <span class="stat-red" >&#9679; Red:  <b id="pop-red" >0</b></span>
+    <span class="stat-green">&#9679; Food: <b id="pop-food">0</b></span>
+    <span class="stat-white">Frame: <b id="frame-num">0</b></span>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<div id="legend">
+    <span><span class="swatch" style="background:#4477ff"></span>Blue (shares)</span>
+    <span><span class="swatch" style="background:#ff4444"></span>Red (fights)</span>
+    <span><span class="swatch" style="background:#00dd44"></span>Food</span>
+</div>
+
+<table id="outcome-table">
+    <tr>
+        <th>Encounter</th><th>Lifespan gained</th>
+    </tr>
+    <tr><td>Blue &times; Blue</td><td>Each +7 (share)</td></tr>
+    <tr><td>Red &times; Red</td><td>Each +4 (fight)</td></tr>
+    <tr><td>Red &times; Blue</td><td>Red +12 / Blue +3</td></tr>
+    <tr><td>Solo</td><td>+15</td></tr>
+</table>
+
+<div id="controls">
+    <button id="btn-pause">Pause</button>
+    <button id="btn-reset">Reset</button>
+</div>
+
+<script>
+
+// ============================================================
+// CONFIGURATION
+// ============================================================
+
+// GRID_SIZE: screen pixels per simulation unit.
+// This is the primary "size" variable described in the spec.
+// A value of 10 means every sim-unit is drawn as a 10×10 pixel block.
+const GRID_SIZE = 10;
+
+// World dimensions in simulation units
+// (canvas size = WORLD_W × GRID_SIZE  by  WORLD_H × GRID_SIZE pixels)
+const WORLD_W = 60;   // Width
+const WORLD_H = 60;   // Height
+
+// Timing
+const FPS                 = 3;   // Target frames per second
+const FOOD_SPAWN_INTERVAL = 1;   // Frames between automatic food spawns.
+                                 // 1 means one new food item per frame.
+                                 // Increase to spawn food less frequently.
+
+// Creature life parameters
+const LIFESPAN            = 15;  // Starting lifespan (frames)
+const EATING_TIME         = 3;   // Frames needed to consume food (no lifespan loss)
+const REPRODUCE_THRESHOLD = 18;  // Lifespan above which the creature reproduces
+const VISION_RANGE        = 15;  // Radius at which food is spotted (sim units)
+const INTERACTION_RADIUS  = 3;   // Radius around food for joining an interaction (sim units)
+const SPEED               = 1;   // Movement speed (sim units per frame)
+
+// Wander behaviour
+const WANDER_CHANGE_INTERVAL = 3;            // Frames between heading adjustments
+const WANDER_MAX_TURN        = Math.PI / 6; // Maximum turn per adjustment (~30°)
+
+// Initial counts
+const INITIAL_BLUE = 6;   // Starting blue creatures  (spec: ≥ 6)
+const INITIAL_RED  = 6;   // Starting red creatures   (spec: ≥ 6)
+const INITIAL_FOOD = 20;  // Starting food items      (spec: 20)
+
+// Lifespan gained per encounter type
+const SOLO_GAIN      = 15; // Single creature eats alone
+const BLUE_BLUE_GAIN = 7;  // Blue × Blue: each creature gains this
+const RED_RED_GAIN   = 4;  // Red  × Red:  each creature gains this
+const RED_WIN_GAIN   = 12; // Red  × Blue: red gains this
+const BLUE_LOSE_GAIN = 3;  // Red  × Blue: blue gains this
+
+
+// ============================================================
+// UTILITY FUNCTIONS
+// ============================================================
+
+/** Euclidean distance between two {x, y} objects */
+function dist(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+/** Clamp val to [min, max] */
+function clamp(val, min, max) {
+    return val < min ? min : val > max ? max : val;
+}
+
+/** Random position within the world */
+function randomPos() {
+    return { x: Math.random() * WORLD_W, y: Math.random() * WORLD_H };
+}
+
+
+// ============================================================
+// FOOD CLASS
+// ============================================================
+
+class Food {
+    constructor(x, y) {
+        this.x      = x;
+        this.y      = y;
+        this.eaters = [];    // Up to 2 creatures currently eating here
+        this.timer  = 0;     // Frames elapsed since the first creature arrived
+        this.done   = false; // True once the food is fully consumed
+    }
+
+    /** True when no more creatures can join (2 already eating) */
+    isFull() { return this.eaters.length >= 2; }
+
+    /** True if the given creature is already one of the eaters */
+    hasEater(creature) { return this.eaters.includes(creature); }
+
+    /**
+     * Attempt to add a creature as an eater.
+     * Returns true on success, false if the slot is full or the food is gone.
+     */
+    join(creature) {
+        if (this.done || this.isFull()) return false;
+        this.eaters.push(creature);
+        return true;
+    }
+
+    /** Advance food state by one frame (called by the simulation each tick) */
+    update() {
+        if (this.done || this.eaters.length === 0) return;
+
+        // Drop eaters that died during the eating window
+        this.eaters = this.eaters.filter(e => e.alive);
+        if (this.eaters.length === 0) { this.done = true; return; }
+
+        this.timer++;
+        if (this.timer >= EATING_TIME) {
+            this._resolve();
+        }
+    }
+
+    /**
+     * Distribute lifespan gains according to the species pairing,
+     * release the eaters back to wandering, and mark the food as done.
+     */
+    _resolve() {
+        const [a, b] = this.eaters;
+
+        if (this.eaters.length === 1) {
+            a.gainLifespan(SOLO_GAIN);
+
+        } else if (a.type === 'blue' && b.type === 'blue') {
+            a.gainLifespan(BLUE_BLUE_GAIN);
+            b.gainLifespan(BLUE_BLUE_GAIN);
+
+        } else if (a.type === 'red' && b.type === 'red') {
+            a.gainLifespan(RED_RED_GAIN);
+            b.gainLifespan(RED_RED_GAIN);
+
+        } else {
+            // Red vs Blue
+            const red  = a.type === 'red'  ? a : b;
+            const blue = a.type === 'blue' ? a : b;
+            red.gainLifespan(RED_WIN_GAIN);
+            blue.gainLifespan(BLUE_LOSE_GAIN);
+        }
+
+        // Release eaters back to wandering
+        for (const eater of this.eaters) {
+            if (eater.alive) {
+                eater.state      = 'wandering';
+                eater.targetFood = null;
+            }
+        }
+
+        this.done = true;
+    }
+}
+
+
+// ============================================================
+// CREATURE CLASS  (base)
+// ============================================================
+
+class Creature {
+    constructor(x, y, type) {
+        this.x    = x;
+        this.y    = y;
+        this.type = type;            // 'blue' | 'red'
+
+        this.lifespan   = LIFESPAN;
+        this.state      = 'wandering'; // 'wandering' | 'seeking' | 'eating'
+        this.targetFood = null;
+
+        // Wander internals
+        this.wanderAngle = Math.random() * 2 * Math.PI;
+        this.wanderTimer = 0;
+
+        this.alive        = true;
+        this.pendingChild = null; // Set inside gainLifespan() when reproduction triggers
+    }
+
+    /** Advance the creature by one frame */
+    update(foods) {
+        if (!this.alive) return;
+
+        // Lifespan decreases every frame — except while eating
+        if (this.state !== 'eating') {
+            this.lifespan--;
+            if (this.lifespan <= 0) { this.alive = false; return; }
+        }
+
+        switch (this.state) {
+            case 'wandering': this._wander(foods); break;
+            case 'seeking':   this._seek();         break;
+            case 'eating':    /* food handles resolution */ break;
+        }
+    }
+
+    // ---------------------------------------------------------------- WANDER
+
+    _wander(foods) {
+        // Scan for visible food first; switch to seeking if found
+        const target = this._findFood(foods);
+        if (target) {
+            this.targetFood = target;
+            this.state = 'seeking';
+            return;
+        }
+
+        // Slightly adjust heading every WANDER_CHANGE_INTERVAL frames
+        // so creatures sweep the world rather than vibrating in place
+        this.wanderTimer++;
+        if (this.wanderTimer >= WANDER_CHANGE_INTERVAL) {
+            this.wanderTimer = 0;
+            this.wanderAngle += (Math.random() - 0.5) * 2 * WANDER_MAX_TURN;
+        }
+
+        // Step in current direction
+        let nx = this.x + Math.cos(this.wanderAngle) * SPEED;
+        let ny = this.y + Math.sin(this.wanderAngle) * SPEED;
+
+        // Reflect off world edges
+        if (nx < 0 || nx >= WORLD_W) {
+            this.wanderAngle = Math.PI - this.wanderAngle;
+            nx = clamp(nx, 0, WORLD_W - 0.01);
+        }
+        if (ny < 0 || ny >= WORLD_H) {
+            this.wanderAngle = -this.wanderAngle;
+            ny = clamp(ny, 0, WORLD_H - 0.01);
+        }
+
+        this.x = nx;
+        this.y = ny;
+    }
+
+    // ---------------------------------------------------------------- SEEK
+
+    _seek() {
+        const food = this.targetFood;
+
+        // Abort if the target vanished or is now blocked by two others
+        if (!food || food.done || (food.isFull() && !food.hasEater(this))) {
+            this.targetFood = null;
+            this.state = 'wandering';
+            return;
+        }
+
+        const d = dist(this, food);
+
+        if (d <= INTERACTION_RADIUS) {
+            // Arrived – attempt to claim an eating slot
+            if (food.join(this)) {
+                this.state = 'eating';
+            } else {
+                // All slots taken; treat food as gone
+                this.targetFood = null;
+                this.state = 'wandering';
+            }
+        } else {
+            // Move toward food
+            const dx = food.x - this.x;
+            const dy = food.y - this.y;
+            this.x += (dx / d) * SPEED;
+            this.y += (dy / d) * SPEED;
+        }
+    }
+
+    // -------------------------------------------------------- FOOD DETECTION
+
+    _findFood(foods) {
+        let best = null, bestDist = VISION_RANGE + 1;
+        for (const food of foods) {
+            if (food.done) continue;
+            // Skip food that is already occupied by 2 others
+            if (food.isFull() && !food.hasEater(this)) continue;
+
+            const d = dist(this, food);
+            if (d <= VISION_RANGE && d < bestDist) {
+                bestDist = d;
+                best = food;
+            }
+        }
+        return best;
+    }
+
+    // ------------------------------------------------- LIFESPAN / REPRODUCE
+
+    gainLifespan(amount) {
+        this.lifespan += amount;
+        if (this.lifespan > REPRODUCE_THRESHOLD && !this.pendingChild) {
+            // Spawn one child near the parent
+            const ox = (Math.random() - 0.5) * 6;
+            const oy = (Math.random() - 0.5) * 6;
+            this.pendingChild = this._makeChild(
+                clamp(this.x + ox, 0, WORLD_W - 0.01),
+                clamp(this.y + oy, 0, WORLD_H - 0.01)
+            );
+        }
+    }
+
+    /** Overridden in subclasses to produce the correct species */
+    _makeChild(x, y) { return new Creature(x, y, this.type); }
+}
+
+
+// ============================================================
+// BLUE CREATURE CLASS
+// ============================================================
+
+class BlueCreature extends Creature {
+    constructor(x, y) { super(x, y, 'blue'); }
+    _makeChild(x, y)  { return new BlueCreature(x, y); }
+}
+
+
+// ============================================================
+// RED CREATURE CLASS
+// ============================================================
+
+class RedCreature extends Creature {
+    constructor(x, y) { super(x, y, 'red'); }
+    _makeChild(x, y)  { return new RedCreature(x, y); }
+}
+
+
+// ============================================================
+// SIMULATION CLASS
+// ============================================================
+
+class Simulation {
+    constructor() {
+        this.creatures      = [];
+        this.foods          = [];
+        this.foodSpawnTimer = 0;
+        this.frame          = 0;
+        this._init();
+    }
+
+    /** Initialise (or re-initialise) the simulation state */
+    _init() {
+        this.creatures      = [];
+        this.foods          = [];
+        this.foodSpawnTimer = 0;
+        this.frame          = 0;
+
+        for (let i = 0; i < INITIAL_BLUE; i++) {
+            const p = randomPos();
+            this.creatures.push(new BlueCreature(p.x, p.y));
+        }
+        for (let i = 0; i < INITIAL_RED; i++) {
+            const p = randomPos();
+            this.creatures.push(new RedCreature(p.x, p.y));
+        }
+        for (let i = 0; i < INITIAL_FOOD; i++) {
+            this._spawnFood();
+        }
+    }
+
+    /** Reset the simulation to its initial state */
+    reset() { this._init(); }
+
+    /** Place a new food item at a random location */
+    _spawnFood() {
+        const p = randomPos();
+        this.foods.push(new Food(p.x, p.y));
+    }
+
+    /** Advance the simulation by one frame */
+    update() {
+        this.frame++;
+
+        // --- Periodic food spawning ---
+        this.foodSpawnTimer++;
+        if (this.foodSpawnTimer >= FOOD_SPAWN_INTERVAL) {
+            this.foodSpawnTimer = 0;
+            this._spawnFood();
+        }
+
+        // --- Update food items ---
+        for (const food of this.foods) food.update();
+        this.foods = this.foods.filter(f => !f.done);
+
+        // --- Update creatures & collect newborns ---
+        const born = [];
+        for (const creature of this.creatures) {
+            creature.update(this.foods);
+            if (creature.pendingChild) {
+                born.push(creature.pendingChild);
+                creature.pendingChild = null;
+            }
+        }
+        this.creatures.push(...born);
+        this.creatures = this.creatures.filter(c => c.alive);
+    }
+
+    /**
+     * Returns the number of living creatures of the given species.
+     * @param {'blue'|'red'} type
+     * @returns {number}
+     */
+    populationCounter(type) {
+        return this.creatures.filter(c => c.type === type).length;
+    }
+
+    /** Render the current state onto the given 2-D canvas context */
+    draw(ctx) {
+        // Background
+        ctx.fillStyle = '#111122';
+        ctx.fillRect(0, 0, WORLD_W * GRID_SIZE, WORLD_H * GRID_SIZE);
+
+        // Food items (green pixels)
+        ctx.fillStyle = '#00dd44';
+        for (const food of this.foods) {
+            ctx.fillRect(
+                Math.floor(food.x) * GRID_SIZE,
+                Math.floor(food.y) * GRID_SIZE,
+                GRID_SIZE, GRID_SIZE
+            );
+        }
+
+        // Creatures (1 sim unit = GRID_SIZE × GRID_SIZE screen pixels)
+        for (const creature of this.creatures) {
+            ctx.fillStyle = creature.type === 'blue' ? '#4477ff' : '#ff4444';
+            ctx.fillRect(
+                Math.floor(creature.x) * GRID_SIZE,
+                Math.floor(creature.y) * GRID_SIZE,
+                GRID_SIZE, GRID_SIZE
+            );
+        }
+    }
+}
+
+
+// ============================================================
+// RENDERER & MAIN LOOP
+// ============================================================
+
+const canvas = document.getElementById('canvas');
+canvas.width  = WORLD_W * GRID_SIZE;
+canvas.height = WORLD_H * GRID_SIZE;
+const ctx = canvas.getContext('2d');
+
+const popBlueEl  = document.getElementById('pop-blue');
+const popRedEl   = document.getElementById('pop-red');
+const popFoodEl  = document.getElementById('pop-food');
+const frameNumEl = document.getElementById('frame-num');
+
+const sim      = new Simulation();
+let paused     = false;
+let lastTime   = 0;
+const msPerFrame = 1000 / FPS;
+
+function updateStats() {
+    popBlueEl.textContent  = sim.populationCounter('blue');
+    popRedEl.textContent   = sim.populationCounter('red');
+    popFoodEl.textContent  = sim.foods.length;
+    frameNumEl.textContent = sim.frame;
+}
+
+function loop(timestamp) {
+    requestAnimationFrame(loop);
+    if (paused) return;
+    if (timestamp - lastTime < msPerFrame) return;
+    lastTime = timestamp;
+
+    sim.update();
+    sim.draw(ctx);
+    updateStats();
+}
+
+document.getElementById('btn-pause').addEventListener('click', function () {
+    paused = !paused;
+    this.textContent = paused ? 'Resume' : 'Pause';
+});
+
+document.getElementById('btn-reset').addEventListener('click', function () {
+    sim.reset();
+});
+
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>
