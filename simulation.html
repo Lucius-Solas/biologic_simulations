@@ -458,6 +458,7 @@ class Simulation {
             const p = randomPos();
             this.creatures.push(new RedCreature(p.x, p.y));
         }
+        this._resolveCreatureCellCollisions();
         for (let i = 0; i < INITIAL_FOOD; i++) {
             this._spawnFood();
         }
@@ -470,6 +471,49 @@ class Simulation {
     _spawnFood() {
         const p = randomPos();
         this.foods.push(new Food(p.x, p.y));
+    }
+
+    _cellKey(x, y) {
+        return `${Math.floor(x)},${Math.floor(y)}`;
+    }
+
+    _findNearestFreeCellPosition(x, y, occupied) {
+        const baseX = Math.floor(clamp(x, 0, WORLD_W - 0.01));
+        const baseY = Math.floor(clamp(y, 0, WORLD_H - 0.01));
+
+        const baseKey = `${baseX},${baseY}`;
+        if (!occupied.has(baseKey)) {
+            return { x: baseX + 0.01, y: baseY + 0.01 };
+        }
+
+        const maxRadius = Math.max(WORLD_W, WORLD_H);
+        for (let radius = 1; radius <= maxRadius; radius++) {
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+                    const cx = baseX + dx;
+                    const cy = baseY + dy;
+                    if (cx < 0 || cx >= WORLD_W || cy < 0 || cy >= WORLD_H) continue;
+                    const key = `${cx},${cy}`;
+                    if (!occupied.has(key)) {
+                        return { x: cx + 0.01, y: cy + 0.01 };
+                    }
+                }
+            }
+        }
+
+        return { x: baseX + 0.01, y: baseY + 0.01 };
+    }
+
+    _resolveCreatureCellCollisions() {
+        const occupied = new Set();
+        for (const creature of this.creatures) {
+            if (!creature.alive) continue;
+            const p = this._findNearestFreeCellPosition(creature.x, creature.y, occupied);
+            creature.x = p.x;
+            creature.y = p.y;
+            occupied.add(this._cellKey(creature.x, creature.y));
+        }
     }
 
     /** Advance the simulation by one frame */
@@ -498,6 +542,7 @@ class Simulation {
         }
         this.creatures.push(...born);
         this.creatures = this.creatures.filter(c => c.alive);
+        this._resolveCreatureCellCollisions();
     }
 
     /**
