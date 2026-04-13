@@ -212,6 +212,7 @@ const SPEED = 1;
 const RED_PREDATION_DEFAULT = false;
 const RED_PREDATION_CHANCE = 0.30;
 const RED_SPEED_MULTIPLIER = 1.5;
+const OFFSPRING_DIRECTION_JITTER = Math.PI / 3;
 
 const WANDER_CHANGE_INTERVAL = 3;
 const WANDER_MAX_TURN = Math.PI / 6;
@@ -230,6 +231,7 @@ const BLUE_LOSE_GAIN = 3;
 const GRAPH_VISIBLE_FRAMES = 50;
 const GRAPH_FRAME_WIDTH = 12;
 const GRAPH_HEIGHT = WORLD_H * GRID_SIZE;
+const GRAPH_SCROLL_SLACK = 5;
 
 let redPredationEnabled = RED_PREDATION_DEFAULT;
 
@@ -247,7 +249,7 @@ function randomPos() {
     return { x: Math.random() * WORLD_W, y: Math.random() * WORLD_H };
 }
 
-function isNonRed(type) {
+function isCooperative(type) {
     return type !== 'red';
 }
 
@@ -287,7 +289,7 @@ class Food {
         } else if (a.type === 'red' && b.type === 'red') {
             a.gainLifespan(RED_RED_GAIN);
             b.gainLifespan(RED_RED_GAIN);
-        } else if (isNonRed(a.type) && isNonRed(b.type)) {
+        } else if (isCooperative(a.type) && isCooperative(b.type)) {
             a.gainLifespan(BLUE_BLUE_GAIN);
             b.gainLifespan(BLUE_BLUE_GAIN);
         } else {
@@ -431,7 +433,7 @@ class Creature {
                 clamp(this.x + ox, 0, WORLD_W - 0.01),
                 clamp(this.y + oy, 0, WORLD_H - 0.01)
             );
-            child.wanderAngle = this.wanderAngle + Math.PI + ((Math.random() - 0.5) * WANDER_MAX_TURN);
+            child.wanderAngle = this.wanderAngle + Math.PI + ((Math.random() - 0.5) * OFFSPRING_DIRECTION_JITTER);
             this.pendingChild = child;
         }
     }
@@ -748,8 +750,7 @@ timeScaleInput.addEventListener('input', function () {
 });
 
 graphScroll.addEventListener('scroll', function () {
-    const slack = 5;
-    graphPinnedToLatest = this.scrollLeft + this.clientWidth >= this.scrollWidth - slack;
+    graphPinnedToLatest = this.scrollLeft + this.clientWidth >= this.scrollWidth - GRAPH_SCROLL_SLACK;
 });
 
 document.getElementById('btn-pause').addEventListener('click', function () {
