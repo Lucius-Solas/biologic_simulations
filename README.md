@@ -32,6 +32,7 @@ Open **`simulation.html`** in any modern browser – no build step or server req
   * Red no longer seeks food.
   * Red moves **50% faster**.
   * On contact with a non-red creature, there is a **30% chance** to consume it.
+  * If the chance fails, both creatures survive and continue moving normally.
 
 ## Interface
 

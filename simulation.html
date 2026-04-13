@@ -204,15 +204,15 @@ const FOOD_SPAWN_INTERVAL = 1;
 
 const LIFESPAN = 15;
 const EATING_TIME = 3;
-const REPRODUCE_THRESHOLD = 18;
+const REPRODUCE_THRESHOLD = 18; // Reproduce after gaining at least 3 lifespan over the starting 15.
 const VISION_RANGE = 15;
 const INTERACTION_RADIUS = 3;
 const SPEED = 1;
 
 const RED_PREDATION_DEFAULT = false;
-const RED_PREDATION_CHANCE = 0.30;
+const RED_PREDATION_SUCCESS_CHANCE = 0.30;
 const RED_SPEED_MULTIPLIER = 1.5;
-const OFFSPRING_DIRECTION_JITTER = Math.PI / 3;
+const OFFSPRING_DIRECTION_JITTER = Math.PI / 6;
 
 const WANDER_CHANGE_INTERVAL = 3;
 const WANDER_MAX_TURN = Math.PI / 6;
@@ -547,7 +547,7 @@ class Simulation {
             for (const target of prey) {
                 if (!red.alive || !target.alive) continue;
                 if (dist(red, target) > INTERACTION_RADIUS) continue;
-                if (Math.random() >= RED_PREDATION_CHANCE) continue;
+                if (Math.random() >= RED_PREDATION_SUCCESS_CHANCE) continue;
 
                 target.alive = false;
                 red.gainLifespan(SOLO_GAIN);
