@@ -17,20 +17,21 @@ Open **`simulation.html`** in any modern browser – no build step or server req
 
 ## Rules
 
-* Each creature starts with **15 frames of lifespan** (ticks down every frame except while eating).
+* Each creature starts with **22 frames of lifespan** (ticks down every frame except while eating).
 * Food spawns automatically every frame by default.
-* Creatures detect food within a **15-unit vision radius**.
+* Creatures detect food within a **18-unit vision radius**.
 * Eating takes **3 frames** (no lifespan loss during eating).
 * Solo food resolution gives **+15 lifespan**.
 * Two-creature food interactions:
   * **Blue/Purple × Blue/Purple** → each gets **+7** lifespan.
   * **Red × Red** → each gets **+4** lifespan.
   * **Red × Blue/Purple** → Red gets **+12**, other gets **+3**.
-* If lifespan exceeds the reproduce threshold, one child is spawned nearby.
+* If lifespan exceeds the reproduce threshold (**25**), one child is spawned nearby.
 * Offspring start moving in the opposite direction of the parent.
 * Optional **Red predation mode**:
   * Red no longer seeks food.
   * Red moves **50% faster**.
+  * Red-vs-red food interactions are disabled while predation mode is on.
   * On contact with a non-red creature, there is a **30% chance** to consume it.
   * If the chance fails, both creatures survive and continue moving normally.
 
