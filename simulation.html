@@ -202,10 +202,10 @@ const WORLD_H = 60;
 const FPS = 3;
 const FOOD_SPAWN_INTERVAL = 1;
 
-const LIFESPAN = 15;
+const LIFESPAN = 22;
 const EATING_TIME = 3;
-const REPRODUCE_THRESHOLD = 18; // Reproduce after gaining at least 3 lifespan over the starting 15.
-const VISION_RANGE = 15;
+const REPRODUCE_THRESHOLD = 25; // Reproduce after gaining at least 3 lifespan over the starting 22.
+const VISION_RANGE = 18;
 const INTERACTION_RADIUS = 3;
 const SPEED = 1;
 
@@ -287,6 +287,10 @@ class Food {
         if (this.eaters.length === 1) {
             a.gainLifespan(SOLO_GAIN);
         } else if (a.type === 'red' && b.type === 'red') {
+            if (redPredationEnabled) {
+                this.done = true;
+                return;
+            }
             a.gainLifespan(RED_RED_GAIN);
             b.gainLifespan(RED_RED_GAIN);
         } else if (isCooperative(a.type) && isCooperative(b.type)) {
@@ -530,6 +534,15 @@ class Simulation {
         const occupied = new Set();
         for (const creature of this.creatures) {
             if (!creature.alive) continue;
+            creature.x = clamp(creature.x, 0, WORLD_W - 0.01);
+            creature.y = clamp(creature.y, 0, WORLD_H - 0.01);
+
+            const currentCell = this._cellKey(creature.x, creature.y);
+            if (!occupied.has(currentCell)) {
+                occupied.add(currentCell);
+                continue;
+            }
+
             const p = this._findNearestFreeCellPosition(creature.x, creature.y, occupied);
             creature.x = p.x;
             creature.y = p.y;
@@ -742,6 +755,13 @@ redPredationInput.checked = redPredationEnabled;
 
 redPredationInput.addEventListener('change', function () {
     redPredationEnabled = this.checked;
+    if (redPredationEnabled) {
+        for (const creature of sim.creatures) {
+            if (creature.type !== 'red') continue;
+            creature.state = 'wandering';
+            creature.targetFood = null;
+        }
+    }
 });
 
 timeScaleInput.addEventListener('input', function () {
